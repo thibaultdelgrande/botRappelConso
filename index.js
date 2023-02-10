@@ -1,204 +1,153 @@
-const { Client, GatewayIntentBits, EmbedBuilder, SlashCommandBuilder } = require("discord.js");
-const { token } = require("./config/token.json");
-const edts = require("./config/edts.json");
-const fetch = require("node-fetch");
-const ical = require("ical");
+import { Client, embedLength, GatewayIntentBits, REST, Routes} from 'discord.js';
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+import config from './config.json' assert { type: "json" };
+import got from 'got';
+import fs from 'fs/promises';
 
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages
-    ]
-});
+if (!await fs.access('db.json', fs.constants.F_OK).catch(() => '')) {
+    await fs.writeFile('db.json', JSON.stringify({
+        last_id: 0,
+        channels: []
+    }));
+}
 
-client.on("interactionCreate", async (interaction) => {
+const db = JSON.parse(await fs.readFile('db.json'));
 
-    if(!interaction.isCommand()) return;
-    if(interaction.commandName != "edt") return;
+async function writeDB(newDB = {
+    last_id: 0,
+    channels: []
+}) {
+    await fs.writeFile('db.json', JSON.stringify({
+        last_id: 0,
+        channels: []
+    }));
+}
 
-    let groupe = interaction.options.get("groupe").value;
-    
-    let date = new Date();
-    switch(interaction.options.get("date").value){
-        case "tomorrow":
-            date = getTomorrow();
-            break;
-        case "nextWorkingDay":
-            date = getNextWorkingDay();
-            break;
-    }   
-
-    let events = await getEventsOfDay(groupe, date);
-    let embed = createEmbed(groupe,date,events);
-
-    interaction.reply({embeds: [embed]});
-
-});
-
-function createEmbed(groupe, date, events){
-
-    let embed = new EmbedBuilder()
-    .setColor(0xff7779)
-    .setTitle(":sparkles: EDT des "+groupe+" - "+date.toLocaleDateString());
-
-    if(events.length > 0){
-        events.forEach(event => {
-        
-            let start = new Date(event.start).toLocaleTimeString("fr-FR",{
-                hour: "2-digit",
-                minute: "2-digit"
-            });
-            
-            let end = new Date(event.end).toLocaleTimeString("fr-FR",{
-                hour: "2-digit",
-                minute: "2-digit"
-            });
-    
-            let summary = event.summary;
-            let location = event.location.split(",")[0].substring(6);
-            let enseignant = event.description.split("\n")[event.description.split("\n").length-4];
-
-            embed.addFields(
-                {
-                    name: ":clock2: "+start+" - "+end+(location != "" ? " :round_pushpin: "+location : ""),
-                    value: summary+"\n"+enseignant+""
-                }
-            );
-    
-        });
-    } else {
-        embed.addFields(
+async function rappelConso() {
+    const result = await got.get('https://data.economie.gouv.fr/api/v2/catalog/datasets/rappelconso0/records?order_by=date_de_publication%20desc,reference_fiche%20desc&limit=10&offset=0&timezone=UTC')
+    let produit = JSON.parse(result.body).records[0].record.fields;
+    let message = {
+        "title": "Rôti Normand - Vallégrain",
+        "description": "Rôti de porc élaboré d'environ 1kg. Rôti farci avec de la farce nature, des tranches de camembert et de pommes, couvert avec des tranches de camembert et de pommes, enroulé dans une crépine.",
+        "url": "https://rappel.conso.gouv.fr/fiche-rappel/9289/Interne",
+        "color": 15241224,
+        "fields": [
             {
-                name: ":clock2: 00:00 - 23:59 :round_pushpin: chez soi",
-                value: "Dormir"
-            }
-        );
-    }
-    
-
-    return embed;
-}
-
-function getTomorrow(){
-    let date = new Date();
-    date.setDate(date.getDate() + 1);
-    return date;
-}
-
-function getNextWorkingDay(){
-    let date = new Date();
-
-    do{
-        date.setDate(date.getDate() + 1);
-    } while (date.getDay() == 0 || date.getDay() == 6)
-
-    return date;
-}
-
-async function getEventsOfDay(groupe, date){
-
-    let link = edts[groupe];
-
-    let response = await fetch(link);
-    let text = await response.text();
-    let events = Object.values(ical.parseICS(text));
-    
-    events.sort((a, b) => {
-        return new Date(a.start).getTime() - new Date(b.start).getTime();
-    });
-
-    let eventsAtDate = events.filter(e => new Date(e.start).toLocaleString().startsWith(date.toLocaleString().split(" ")[0]));
-    
-    return eventsAtDate;
-
-}
-
-const command = new SlashCommandBuilder()
-.setName("edt")
-.setDescription("Donne l'emploi du temps du prochain jour ouvré")
-.addStringOption(option => 
-    option
-    .setName("groupe")
-    .setDescription("Nom du groupe d'étudiants")
-    .setRequired(true)
-    .addChoices(
-        {
-            name: "Première année - TP11",
-            value: "1A TP11"
-        },
-        {
-            name: "Première année - TP12",
-            value: "1A TP12"
-        },
-        {
-            name: "Première année - TP21",
-            value: "1A TP21"
-        },
-        {
-            name: "Première année - TP22",
-            value: "1A TP22"
-        },
-        {
-            name: "Création Numérique - Alternants",
-            value: "CNA"
-        },
-        {
-            name: "Création Numérique - Initiaux",
-            value: "CNI"
-        },
-        {
-            name: "Développement Web - Alternants",
-            value: "DWA"
-        },
-        {
-            name: "Développement Web - Initiaux",
-            value: "DWI"
-        },
-        {
-            name: "Stratégies de Communication - Alternants",
-            value: "SCA"
-        },
-        {
-            name: "Stratégies de Communication - Initiaux",
-            value: "SCI"
-        }
-    )
-)
-.addStringOption(option =>
-    option
-    .setName("date")
-    .setDescription("Date de l'emploi du temps souhaité")
-    .setRequired(true)
-    .addChoices(
-        {
-            name: "Aujourd'hui",
-            value: "today"
-        },
-        {
-            name: "Demain",
-            value: "tomorrow"
-        },
-        {
-            name: "Prochain jour ouvré",
-            value: "nextWorkingDay"
-        }
-    )
-);
-
-client.once('ready', () => {
-
-    client.guilds.cache.find(g => g.id === "908708248494932068").commands.create(command);
-
-    client.user.setPresence({
-        activities: [
+                "name": "Motif du rappel",
+                "value": "Présence de Salmonelle détectée"
+            },
             {
-                name: "/edt <groupe> <date>",
-                type: 3
+                "name": "Risques encourus par le consommateur",
+                "value": "Salmonella spp (agent responsable de la salmonellose)"
+            },
+            {
+                "name": "Conduites à tenir par le consommateur",
+                "value": "Ne plus consommer Rapporter le produit au point de vente"
+            },
+            {
+                "name": "Modalités de compensations",
+                "value": "Remboursements"
+            },
+            {
+                "name": "Date de fin de procédure de rappel",
+                "value": "samedi 25 février 2023"
+            },
+            {
+                "name": "Préconisations sanitaire",
+                "value": "Les toxi-infections alimentaires causées par les salmonelles se traduisent par des troubles gastro-intestinaux (diarrhée, vomissements) d'apparition brutale souvent accompagnés de fièvre et de maux de tête qui surviennent généralement 6h à 72h après la consommation des produits contaminés.  Ces symptômes peuvent être plus prononcés chez les jeunes enfants, les femmes enceintes, les sujets immunodéprimés et les personnes âgées. Les personnes qui auraient consommé ces produits et qui présenteraient ces symptômes sont invitées à consulter leur médecin traitant en lui signalant cette consommation. En l'absence de symptômes dans les 7 jours après la consommation des produits concernés, il est inutile de s'inquiéter et de consulter un médecin. Si le produit doit subir une cuisson avant consommation : la cuisson à cœur des produits (œufs durs, pâtisseries, viandes de volailles…) à +65°C permet de détruire ces bactéries et de prévenir les conséquences d'une telle contamination."
+            },
+            {
+                "name": "Nature juridique du rappel",
+                "value": "Volontaire (sans arrêté préfectoral)"
+            },
+            {
+                "name": "Ditributeurs",
+                "value": "Alvidis"
+            },
+            {
+                "name": "Numéro de contact",
+                "value": "0237299494"
+            },
+            {
+                "name": "Lien vers la fiche de rappel",
+                "value": "https://rappel.conso.gouv.fr/fiche-rappel/9289/Interne"
+            },
+            {
+                "name": "Lien vers la liste des distributeurs",
+                "value": "https://rappel.conso.gouv.fr/document/62732bf3-176f-4635-b721-4f2ff10ed0da/Interne/ListeDesDistributeurs"
+            },
+            {
+                "name": "Lien vers l'affichette PDF",
+                "value": "https://rappel.conso.gouv.fr/affichettePDF/9289/Interne"
             }
         ],
-        status: 'online'
-    });
-    
+        "author": {
+            "name": "RappelConso",
+            "url": "https://rappel.conso.gouv.fr/"
+        },
+        "footer": {
+            "text": "Bot RappelConso - Thibault Delgrande 2023"
+        },
+        "image": {
+            "url": "https://rappel.conso.gouv.fr/image/22847cf9-fc11-4757-b079-2664fa03306d.jpg"
+        },
+        "thumbnail": {
+            "url": "https://www.economie.gouv.fr/files/styles/image_contenu_article_espace/public/files/directions_services/dgccrf/imgs/Lettre_CetC/logo-rappel-conso.jpg"
+        },
+        "id" : produit.reference_fiche
+    }
+    return message;
+}
+
+async function tick() {
+    const channel = await client.channels.fetch('1063566212874911858');
+    const message = await rappelConso();
+    if (message.id !== last_id) {
+        last_id = message.id;
+        channel.send({ embeds: [message] });
+    }
+}
+
+//commande
+const commands = [
+  {
+    name: 'rappel',
+    description: 'Envoie le dernier rappel conso',
+  },
+];
+
+const rest = new REST({ version: '10' }).setToken(config.token);
+
+(async () => {
+  try {
+    console.log('Started refreshing application (/) commands.');
+
+    await rest.put(Routes.applicationCommands("1054704035892051988"), { body: commands });
+
+    console.log('Successfully reloaded application (/) commands.');
+  } catch (error) {
+    console.error(error);
+  }
+})();
+
+client.on('interactionCreate', async interaction => {
+    if (!interaction.isChatInputCommand()) return;
+  
+    if (interaction.commandName === 'rappel') {
+      await interaction.reply({ embeds: [await rappelConso()] });
+    }
+  });
+
+//bot
+
+
+client.on('ready', () => {
+    console.log(`Logged in as ${client.user.tag}!`);
+    tick();
+    setInterval(tick,527276);
 });
 
-client.login(token);
+
+client.login(config.token);
+
+

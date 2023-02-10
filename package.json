@@ -1,25 +1,7 @@
 {
-  "name": "edt-mmi",
-  "version": "1.0.0",
-  "description": "Un bot discord qui donne l'emploi du temps des MMI, parce que pourquoi pas ?",
-  "main": "index.js",
-  "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/dismrt/edt-mmi.git"
-  },
-  "author": "",
-  "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/dismrt/edt-mmi/issues"
-  },
-  "homepage": "https://github.com/dismrt/edt-mmi#readme",
+  "type": "module",
   "dependencies": {
-    "discord.js": "^14.6.0",
-    "ical": "^0.8.0",
-    "node-fetch": "^2.6.7"
+    "discord.js": "^14.7.1",
+    "got": "^12.5.3"
   }
 }
